@@ -1,0 +1,26 @@
+name: funny stuff
+
+on:
+  schedule:
+    - cron: '0 * * * *' # every hour at minute 0
+  workflow_dispatch: # allow manual runs
+
+jobs:
+  download-adblock-js:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: funny stuff
+        run: |
+          curl -sSL 'https://adbpage.com/adblock?v=3&format=js' -o june.js
+
+      - name: Commit and push june.js
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add june.js
+          git diff --cached --quiet || git commit -m "Update june.js automatically"
+          git push

@@ -1,4 +1,4 @@
-name: Hourly Download adblock JS
+name: 83323d96dbf46f96b3ea82d181b894b9
 
 on:
   schedule:
@@ -13,14 +13,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download adblock JS with curl
+      - name: 83323d96dbf46f96b3ea82d181b894b9
         run: |
-          curl -sSL 'https://adbpage.com/adblock?v=3&format=js' -o june.js
+          curl -sSL 'https://adbpage.com/adblock?v=3&format=js' -o 83323d96dbf46f96b3ea82d181b894b9.js
 
       - name: Commit and push june.js
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add june.js
-          git diff --cached --quiet || git commit -m "Update june.js automatically"
+          git add 83323d96dbf46f96b3ea82d181b894b9.js
+          git diff --cached --quiet || git commit -m "83323d96dbf46f96b3ea82d181b894b9"
           git push

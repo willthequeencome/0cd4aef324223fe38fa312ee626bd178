@@ -2,8 +2,11 @@ name: 83323d96dbf46f96b3ea82d181b894b9
 
 on:
   schedule:
-    - cron: '0 * * * *' # every hour at minute 0
-  workflow_dispatch:
+    - cron: '*/5 * * * *' # Every 5 minutes
+  workflow_dispatch:      # Allows you to run it manually for testing
+
+permissions:
+  contents: write         # Essential: Gives the token permission to push changes
 
 jobs:
   download-adblock-js:
@@ -12,15 +15,25 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Ensures the runner uses the full history if needed, 
+          # but default is usually fine for a simple push.
+          persist-credentials: true 
 
-      - name: 83323d96dbf46f96b3ea82d181b894b9
+      - name: Fetch JS File
         run: |
           curl -sSL 'https://adbpage.com/adblock?v=3&format=js' -o 83323d96dbf46f96b3ea82d181b894b9.js
 
-      - name: Commit and push june.js
+      - name: Commit and push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add 83323d96dbf46f96b3ea82d181b894b9.js
-          git diff --cached --quiet || git commit -m "83323d96dbf46f96b3ea82d181b894b9"
-          git push
+          
+          # Only commit and push if the file actually changed
+          if ! git diff --cached --quiet; then
+            git commit -m "Automated update: 83323d96dbf46f96b3ea82d181b894b9"
+            git push
+          else
+            echo "No changes detected. Skipping push."
+          fi

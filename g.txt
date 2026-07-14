@@ -1,0 +1,120 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+)
+
+const (
+	PORT         = 8456
+	RAM_DISK_DIR = "/dev/shm"
+	CERT_FILE    = "cert.pem"
+	KEY_FILE     = "key.pem"
+)
+
+// 1. Regex updated to allow forward slashes (/) for nested folder support
+var validPath = regexp.MustCompile(`^/([a-zA-Z0-9_/-]+)\.(m3u8|ts)$`)
+
+// ---------------------------------------------------------
+// IN-MEMORY MICRO-CACHE (3s)
+// ---------------------------------------------------------
+type CachedManifest struct {
+	Data      []byte
+	UpdatedAt time.Time
+}
+
+var (
+	cache      = make(map[string]*CachedManifest)
+	cacheMutex sync.RWMutex
+)
+
+// Cache now uses the absolute targetPath as the key to prevent folder collisions
+func getManifest(targetPath string) ([]byte, error) {
+	cacheMutex.RLock()
+	cached, exists := cache[targetPath]
+	cacheMutex.RUnlock()
+
+	if exists && time.Since(cached.UpdatedAt) < 3*time.Second {
+		return cached.Data, nil
+	}
+
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		return nil, err
+	}
+
+	cacheMutex.Lock()
+	cache[targetPath] = &CachedManifest{Data: data, UpdatedAt: time.Now()}
+	cacheMutex.Unlock()
+	return data, nil
+}
+
+func streamHandler(w http.ResponseWriter, r *http.Request) {
+	// Universal CORS Headers
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Range")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	match := validPath.FindStringSubmatch(r.URL.Path)
+	if match == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	relativePath := match[1] // e.g., "sports/nba/stream_1"
+	extension := match[2]    // "m3u8" or "ts"
+
+	// Construct the exact file path
+	targetFile := filepath.Join(RAM_DISK_DIR, relativePath+"."+extension)
+
+	// 2. CRITICAL SECURITY: Block Directory Traversal
+	// This guarantees the resolved path never escapes the RAM disk
+	if !strings.HasPrefix(targetFile, RAM_DISK_DIR) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// 3. Routing Logic based on extension
+	if extension == "m3u8" {
+		data, err := getManifest(targetFile)
+		if err != nil {
+			http.Error(w, "Offline", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-mpegURL")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Write(data)
+
+	} else if extension == "ts" {
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.Header().Set("Cache-Control", "public, max-age=31536000") // CDN Cache optimization
+		http.ServeFile(w, r, targetFile)
+	}
+}
+
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", streamHandler)
+
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", PORT),
+		Handler: mux,
+	}
+
+	fmt.Printf("Go HLS server (Multi-Folder Support) running on HTTPS port %d...\n", PORT)
+	if err := server.ListenAndServeTLS(CERT_FILE, KEY_FILE); err != nil {
+		fmt.Printf("Server failed: %v\n", err)
+	}
+}
